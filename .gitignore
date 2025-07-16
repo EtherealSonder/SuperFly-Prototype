@@ -1,0 +1,16 @@
+# Unity-generated
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+.vs/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.unitypackage
