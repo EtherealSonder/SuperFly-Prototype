@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02468a1374b078c40baeed1395d1e69d, type: 3}
+  m_Name: SkyScraper2
+  m_EditorClassIdentifier: 
+  buildingName: SkyScraper2
+  spawnWeight: 26
+  basePrefab: {fileID: 1642788372273184566, guid: 10e8563063d9e804ea9c0bf4eca73534, type: 3}
+  topPrefab: {fileID: 1668864372348371461, guid: fbb28d30941784c4f8325a119bd7a2b6, type: 3}
+  baseHeight: 65
+  yOffset: 0
+  minBaseCount: 1
+  maxBaseCount: 3
