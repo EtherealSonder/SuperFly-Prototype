@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46dea870a60123e40838b2d6727ff2fc, type: 3}
+  m_Name: House1
+  m_EditorClassIdentifier: 
+  houseName: House1
+  housePrefab: {fileID: 5857440578729187248, guid: 706baffbfcbdd964bb4e41c82efda25e, type: 3}
+  materials:
+  - {fileID: 2100000, guid: c7fd85d5c83e505498f21c48879bfa81, type: 2}
+  - {fileID: 2100000, guid: b58897e5471e0a94bab62642dbf857a3, type: 2}
+  - {fileID: 2100000, guid: 851f2f96dec66c14e86b95d8bec66aba, type: 2}
+  - {fileID: 2100000, guid: cfb568a9ffcc9ba48b503292e7c45d17, type: 2}
+  spawnWeight: 1

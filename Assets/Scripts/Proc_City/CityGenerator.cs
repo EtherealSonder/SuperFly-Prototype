@@ -44,6 +44,10 @@ public class CityGenerator : MonoBehaviour
 
     [Header("Building Pool")]
     public List<BuildingDefinition> buildingDefs = new List<BuildingDefinition>();
+    public List<HouseDefinition> houseDefs = new List<HouseDefinition>();
+
+    [Header("Culling")]
+    public int cullingChunkSize;
     public void Generate()
     {
         // List to safely hold targets to destroy
@@ -105,7 +109,10 @@ public class CityGenerator : MonoBehaviour
     zoneNoiseInfluence,
     residentialMaterial,
     urbanMaterial,
-    buildingDefs);
+    buildingDefs,houseDefs,
+    cullingChunkSize,
+    out int[,] voronoiMask,
+    out List<Vector2Int> voronoiSeeds);
 
 
         generator.GenerateRoadsBetweenBlocks(
@@ -127,6 +134,15 @@ public class CityGenerator : MonoBehaviour
     roadPrefab,
     transform
 );
+
+#if UNITY_EDITOR
+        var filler = GetComponent<VoronoiGapFiller>();
+        if (filler != null)
+        {
+            filler.cellSize = blockSize + roadWidth;
+            filler.FillGaps(occupiedGrid, voronoiMask, voronoiSeeds);
+        }
+#endif
 
 
     }

@@ -415,7 +415,7 @@ MonoBehaviour:
   blockPrefab: {fileID: 6670014121256590676, guid: 7c7ecd81ee2dc8445898bf3fe42a7d33, type: 3}
   roadPrefab: {fileID: 8202657310863156432, guid: aff25f116eaefdb4098202872aa8bdbf, type: 3}
   randomizeSeedOnGenerate: 1
-  noiseSeed: 6b65ce7b-ed70-428e-8191-ce9af94ecaa2
+  noiseSeed: 2693d17a-fbca-4aff-9c1f-f8c7ae1aef77
   noiseFrequency: 0.1
   noiseThreshold: 0.25
   numVoronoiSeeds: 8
@@ -433,6 +433,13 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 18889bd2c289bad4483b940fb47038f9, type: 2}
   - {fileID: 11400000, guid: 2351408ff16a7ec4aa827c4fa89b784b, type: 2}
   - {fileID: 11400000, guid: a5ae030edd0270843b1cd39d8afb050a, type: 2}
+  houseDefs:
+  - {fileID: 11400000, guid: 874a8450cb6d0aa4d9bde6fbeeebbb52, type: 2}
+  - {fileID: 11400000, guid: be9fd7e3f53de8745b132697e6fc620a, type: 2}
+  - {fileID: 11400000, guid: 4375bd9e561c8324b8a436b2eaa4ff59, type: 2}
+  - {fileID: 11400000, guid: 1f59e3da5fd228b408a421325489a960, type: 2}
+  - {fileID: 11400000, guid: 630ab140e4a2882428c476ef4477172b, type: 2}
+  cullingChunkSize: 5
 --- !u!4 &1342987140
 Transform:
   m_ObjectHideFlags: 0

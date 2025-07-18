@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 
 public enum ZoneType { Urban, Residential }
@@ -25,6 +25,7 @@ public class CityBlock : MonoBehaviour
 
     private GameObject currentRoot;
 
+    #region Urban Buildings Generation
     public void GenerateUrban(List<BuildingDefinition> buildingDefs, float blockSize)
     {
         if (zone != ZoneType.Urban) return;
@@ -170,4 +171,192 @@ public class CityBlock : MonoBehaviour
 
         return defs[defs.Count - 1]; // fallback
     }
+
+    #endregion
+
+    #region Residential Houses Generation
+    public void GenerateResidential(List<HouseDefinition> houseDefs, float blockSize)
+    {
+        if (zone != ZoneType.Residential) return;
+
+        if (currentRoot != null)
+        {
+#if UNITY_EDITOR
+            DestroyImmediate(currentRoot);
+#else
+        Destroy(currentRoot);
+#endif
+        }
+
+        if (houseDefs == null || houseDefs.Count == 0)
+        {
+            Debug.LogWarning("No house definitions provided.");
+            return;
+        }
+
+        leftoverZones.Clear();
+        cellSize = blockSize;
+
+        currentRoot = new GameObject($"ResidentialBlock_{sizeX}x{sizeZ}");
+        currentRoot.transform.parent = this.transform;
+        currentRoot.transform.localPosition = Vector3.zero;
+
+        Vector3 center = transform.position;
+
+        float totalWidth = sizeX * cellSize;
+        float totalDepth = sizeZ * cellSize;
+
+        // Clamp usable size
+        float usableWidth = Mathf.Floor(totalWidth / 100f) * 100f;
+        float usableDepth = Mathf.Floor(totalDepth / 100f) * 100f;
+
+        float leftoverX = totalWidth - usableWidth;
+        float leftoverZ = totalDepth - usableDepth;
+
+        int cols = Mathf.Max(1, Mathf.FloorToInt(usableWidth / 50f));
+        int rows = Mathf.Max(1, Mathf.FloorToInt(usableDepth / 50f));
+
+        float cellWidth = usableWidth / cols;
+        float cellDepth = usableDepth / rows;
+
+        float startX = -usableWidth / 2f + cellWidth / 2f;
+        float startZ = -usableDepth / 2f + cellDepth / 2f;
+
+        int count = 0;
+        List<GameObject> allHouses = new List<GameObject>();
+
+        for (int z = 0; z < rows; z++)
+        {
+            for (int x = 0; x < cols; x++)
+            {
+                float offsetX = startX + x * cellWidth;
+                float offsetZ = startZ + z * cellDepth;
+                Vector3 pos = center + new Vector3(offsetX, 0f, offsetZ);
+
+                Quaternion rotation;
+                if (z == 0)
+                    rotation = Quaternion.Euler(0, 180f, 0); // South
+                else if (z == rows - 1)
+                    rotation = Quaternion.Euler(0, 0f, 0);   // North
+                else if (x == 0)
+                    rotation = Quaternion.Euler(0, 270f, 0); // West
+                else if (x == cols - 1)
+                    rotation = Quaternion.Euler(0, 90f, 0);  // East
+                else
+                    rotation = Quaternion.identity;
+
+                GameObject house = SpawnHouse(GetRandomHouse(houseDefs), pos, rotation);
+                allHouses.Add(house);
+                count++;
+            }
+        }
+
+        // Interior deletion
+        if (cols > 1 && rows > 1)
+        {
+            List<int> deleteIndices = new List<int>();
+            for (int z = 1; z < rows - 1; z++)
+            {
+                for (int x = 1; x < cols - 1; x++)
+                {
+                    int index = z * cols + x;
+                    deleteIndices.Add(index);
+                }
+            }
+
+            foreach (int i in deleteIndices)
+            {
+#if UNITY_EDITOR
+                DestroyImmediate(allHouses[i]);
+#else
+            Destroy(allHouses[i]);
+#endif
+                count--;
+            }
+        }
+
+        // === LEFTOVER: Interior gap zone (deleted center houses)
+        if (cols > 2 && rows > 2)
+        {
+            float interiorWidth = (cols - 2) * cellWidth;
+            float interiorDepth = (rows - 2) * cellDepth;
+
+            leftoverZones.Add(new LeftoverArea
+            {
+                position = transform.position, // block center
+                size = new Vector2(interiorWidth, interiorDepth)
+            });
+        }
+
+        // === LEFTOVER: Edge margins from merged block mismatch (like urban)
+        if (leftoverX > 0)
+        {
+            float halfGap = leftoverX / 2f;
+
+            leftoverZones.Add(new LeftoverArea
+            {
+                position = transform.position + new Vector3(-totalWidth / 2f + halfGap / 2f, 0f, 0f),
+                size = new Vector2(halfGap, totalDepth)
+            });
+
+            leftoverZones.Add(new LeftoverArea
+            {
+                position = transform.position + new Vector3(totalWidth / 2f - halfGap / 2f, 0f, 0f),
+                size = new Vector2(halfGap, totalDepth)
+            });
+        }
+
+        if (leftoverZ > 0)
+        {
+            float halfGap = leftoverZ / 2f;
+
+            leftoverZones.Add(new LeftoverArea
+            {
+                position = transform.position + new Vector3(0f, 0f, totalDepth / 2f - halfGap / 2f),
+                size = new Vector2(totalWidth, halfGap)
+            });
+
+            leftoverZones.Add(new LeftoverArea
+            {
+                position = transform.position + new Vector3(0f, 0f, -totalDepth / 2f + halfGap / 2f),
+                size = new Vector2(totalWidth, halfGap)
+            });
+        }
+
+        Debug.Log($"[CityBlock] Spawned {count} houses in {sizeX}x{sizeZ} residential block. Leftovers: {leftoverZones.Count}");
+    }
+
+    private GameObject SpawnHouse(HouseDefinition def, Vector3 position, Quaternion rotation)
+    {
+        GameObject houseGO = Instantiate(def.housePrefab, position, rotation, currentRoot.transform);
+
+        if (def.materials != null && def.materials.Count > 0)
+        {
+            Material chosen = def.materials[Random.Range(0, def.materials.Count)];
+            Renderer rend = houseGO.GetComponentInChildren<Renderer>();
+            if (rend != null)
+                rend.material = chosen;
+        }
+
+        return houseGO;
+    }
+
+
+
+    private Quaternion GetFacingRotation(int x, int z, int maxX, int maxZ)
+    {
+        if (z == 0) return Quaternion.Euler(0, 0, 0);         // South
+        if (x == maxX - 1) return Quaternion.Euler(0, 90, 0); // East
+        if (z == maxZ - 1) return Quaternion.Euler(0, 180, 0);// North
+        if (x == 0) return Quaternion.Euler(0, 270, 0);       // West
+        return Quaternion.identity;
+    }
+
+    private HouseDefinition GetRandomHouse(List<HouseDefinition> defs)
+    {
+        // Simple random for now, can add weighted logic later
+        return defs[Random.Range(0, defs.Count)];
+    }
+    #endregion
+
 }

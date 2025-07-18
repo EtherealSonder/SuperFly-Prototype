@@ -24,49 +24,74 @@ public class GridRoadGenerator
     float zoneNoiseInfluence,
     Material residentialMat,
     Material urbanMat,
-    List<BuildingDefinition> GlobalBuildingDefs)
+    List<BuildingDefinition> GlobalBuildingDefs,
+    List<HouseDefinition> GlobalHouseDefs,
+    int chunkSize,
+    out int[,] voronoiMask,
+    out List<Vector2Int> voronoiSeeds
+    )
     {
         bool[,] visited = new bool[width, height];
         float cellSize = blockSize + roadWidth;
 
-        GameObject blocksParent = new GameObject("Blocks");
-        blocksParent.transform.parent = parent;
+        // New chunk system
+        Dictionary<Vector2Int, GameObject> chunkMap = new Dictionary<Vector2Int, GameObject>();
+        Transform chunkParent = new GameObject("Chunks").transform;
+        chunkParent.parent = parent;
 
-        // Voronoi seed points
-        List<Vector2Int> voronoiSeeds = new List<Vector2Int>();
+        // Voronoi seeds
+        voronoiSeeds = new List<Vector2Int>();
+
+       
+
         Random.InitState(seedOffset);
         for (int i = 0; i < numVoronoiSeeds; i++)
-        {
             voronoiSeeds.Add(new Vector2Int(Random.Range(0, width), Random.Range(0, height)));
+
+        voronoiMask = new int[width, height];
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int z = 0; z < height; z++)
+            {
+                float minDist = float.MaxValue;
+                int closest = -1;
+
+                for (int i = 0; i < voronoiSeeds.Count; i++)
+                {
+                    float dist = Vector2Int.Distance(new Vector2Int(x, z), voronoiSeeds[i]);
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        closest = i;
+                    }
+                }
+
+                voronoiMask[x, z] = closest;
+            }
         }
 
         for (int x = 0; x < width; x++)
         {
             for (int z = 0; z < height; z++)
             {
-                if (visited[x, z])
-                    continue;
+                if (visited[x, z]) continue;
 
-                // Voronoi mask
+                // Voronoi gap
                 float minDistance = float.MaxValue;
                 foreach (var seed in voronoiSeeds)
                 {
                     float dist = Vector2Int.Distance(new Vector2Int(x, z), seed);
-                    if (dist < minDistance)
-                        minDistance = dist;
+                    if (dist < minDistance) minDistance = dist;
                 }
-                if (minDistance > voronoiGapThreshold)
-                    continue;
+                if (minDistance > voronoiGapThreshold) continue;
 
-                // Noise mask
+                // Perlin noise skip
                 float noise = Mathf.PerlinNoise((x + seedOffset) * noiseFrequency, (z + seedOffset) * noiseFrequency);
-                if (noise < noiseThreshold)
-                    continue;
+                if (noise < noiseThreshold) continue;
 
-                // Try merging
-                int sizeX = 1;
-                int sizeZ = 1;
-
+                // Merging
+                int sizeX = 1, sizeZ = 1;
                 if (enableMergedBlocks && Random.value < mergeChance)
                 {
                     int trySizeX = Random.Range(1, maxMergeSizeX + 1);
@@ -85,13 +110,13 @@ public class GridRoadGenerator
                     }
                 }
 
-                // Mark grid cells as used
+                // Mark visited
                 for (int dx = 0; dx < sizeX; dx++)
                     for (int dz = 0; dz < sizeZ; dz++)
                         if ((x + dx < width) && (z + dz < height))
                             visited[x + dx, z + dz] = true;
 
-                // Calculate center and size
+                // World placement
                 float posX = (x + sizeX / 2f) * cellSize - (cellSize / 2f);
                 float posZ = (z + sizeZ / 2f) * cellSize - (cellSize / 2f);
                 Vector3 blockPos = new Vector3(posX, 0, posZ);
@@ -100,24 +125,45 @@ public class GridRoadGenerator
                 float depthWorld = sizeZ * cellSize - roadWidth;
                 Vector3 blockScale = new Vector3(widthWorld, 1f, depthWorld);
 
-                // Instantiate block
-                GameObject block = GameObject.Instantiate(blockPrefab, blockPos, Quaternion.identity, blocksParent.transform);
+                // Chunk logic
+                int chunkX = x / chunkSize;
+                int chunkZ = z / chunkSize;
+                Vector2Int chunkKey = new Vector2Int(chunkX, chunkZ);
+
+                if (!chunkMap.ContainsKey(chunkKey))
+                {
+                    GameObject chunkGO = new GameObject($"Chunk_{chunkX}_{chunkZ}");
+                    chunkGO.transform.parent = chunkParent;
+                    chunkGO.transform.position = Vector3.zero;
+                    chunkGO.AddComponent<CityChunkCuller>();
+                    chunkMap[chunkKey] = chunkGO;
+                }
+
+                // Instantiate block under chunk
+                GameObject block = GameObject.Instantiate(blockPrefab, blockPos, Quaternion.identity, chunkMap[chunkKey].transform);
                 block.transform.localScale = blockScale;
 
                 // Determine zone
                 ZoneType zone = GetZoneType(x, z, width, height, seedOffset, zoneFrequency, zoneThreshold, zoneNoiseInfluence);
 
-                // Set material based on zone
+                // Set material
                 Renderer blockRenderer = block.GetComponent<Renderer>();
                 if (blockRenderer != null)
                 {
                     if (zone == ZoneType.Residential && residentialMat != null)
-                        blockRenderer.material = residentialMat;
+                        blockRenderer.sharedMaterial = residentialMat;
                     else if (zone == ZoneType.Urban && urbanMat != null)
-                        blockRenderer.material = urbanMat;
-                }
+                        blockRenderer.sharedMaterial = urbanMat;
 
-                // Set up CityBlock metadata and call GenerateUrban
+                    float tileUnitX = 20f;
+                    float tileUnitZ = 20f;
+
+                    blockRenderer.sharedMaterial.mainTextureScale = new Vector2(
+                        block.transform.localScale.x / tileUnitX,
+                        block.transform.localScale.z / tileUnitZ
+                    );
+                }
+                // CityBlock setup
                 CityBlock cityBlock = block.GetComponent<CityBlock>();
                 if (cityBlock != null)
                 {
@@ -127,18 +173,21 @@ public class GridRoadGenerator
 
                     if (zone == ZoneType.Urban)
                     {
-                        cityBlock.GenerateUrban(GlobalBuildingDefs, blockSize); // <-- inject shared buildingDefs
+                        cityBlock.GenerateUrban(GlobalBuildingDefs, blockSize);
                     }
-                }
+                    else if (zone == ZoneType.Residential)
+                    {
+                        // Add your houseDefs list to the method signature if needed
+                        cityBlock.GenerateResidential(GlobalHouseDefs, blockSize);
+                    }
 
+                }
             }
         }
 
-       
-
-
         return visited;
     }
+
 
     private ZoneType GetZoneType(
       int x, int z,
