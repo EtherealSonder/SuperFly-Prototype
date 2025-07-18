@@ -16,7 +16,9 @@ public class RegionMeshGenerator : MonoBehaviour
     [Header("Materials")]
     public Material lakeMaterial;
     public Material parkMaterial;
-
+    public Material wallMaterial;
+    public GameObject wallPrefab;
+    public float wallHeight = 5f;
 
     [ContextMenu("Generate Filled Mesh (Per Cell)")]
     public void GenerateFilledMeshPerCell()
@@ -53,6 +55,8 @@ public class RegionMeshGenerator : MonoBehaviour
             rend.sharedMaterial = lakeMaterial;
         else if (regionType == "Park" && parkMaterial != null)
             rend.sharedMaterial = parkMaterial;
+
+        GeneratePerimeterWalls();
 #endif
     }
 
@@ -91,6 +95,60 @@ public class RegionMeshGenerator : MonoBehaviour
         return mesh;
     }
 
+    public void GeneratePerimeterWalls()
+    {
+#if UNITY_EDITOR
+        if (wallPrefab == null) return;
+
+        HashSet<Vector2Int> regionSet = new HashSet<Vector2Int>(regionCells);
+        Vector2Int[] directions = new Vector2Int[]
+        {
+        Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down
+        };
+
+        GameObject wallRoot = new GameObject("Walls");
+        wallRoot.transform.parent = this.transform;
+
+        foreach (var cell in regionCells)
+        {
+            foreach (var dir in directions)
+            {
+                Vector2Int neighbor = cell + dir;
+                if (!regionSet.Contains(neighbor))
+                {
+                    Vector3 basePos = new Vector3(cell.x * cellSize, 0, cell.y * cellSize);
+                    Vector3 offset = new Vector3(dir.x, 0, dir.y) * (cellSize / 2f);
+                    Vector3 wallPos = basePos + offset;
+
+                    Quaternion rot = Quaternion.LookRotation(new Vector3(dir.x, 0, dir.y));
+                    GameObject wall = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(wallPrefab);
+                    wall.transform.position = wallPos;
+                    wall.transform.rotation = rot;
+                    wall.transform.localScale = new Vector3(cellSize, wallHeight, 10f);
+                    wall.transform.parent = wallRoot.transform;
+
+                    // Apply material with tiling
+                    if (wallMaterial != null)
+                    {
+                        Renderer rend = wall.GetComponentInChildren<Renderer>();
+                        if (rend != null)
+                        {
+                            rend.sharedMaterial = wallMaterial;
+
+                            float tileUnitX = 20f;
+                            float tileUnitZ = 20f;
+
+                            rend.sharedMaterial.mainTextureScale = new Vector2(
+                                wall.transform.localScale.x / tileUnitX,
+                                wall.transform.localScale.z / tileUnitZ
+                            );
+                        }
+                    }
+                }
+            }
+        }
+#endif
+    }
 
 
     #region MarchSquares not used

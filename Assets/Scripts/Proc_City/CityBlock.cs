@@ -58,8 +58,13 @@ public class CityBlock : MonoBehaviour
         else
         {
             float[] choices = { 100f, 150f, 200f };
-            int r = Random.Range(0, choices.Length);
-            buildingCellSize = choices[r];
+
+            float rand = Random.Range(0, 100);
+            if (rand >= 0 && rand <= 50) buildingCellSize = choices[0];
+            else if(rand>50 && rand<=80) buildingCellSize = choices[1];
+            else buildingCellSize = choices[2];
+            //int r = Random.Range(0, choices.Length);
+            //buildingCellSize = choices[r];
         }
 
         // Block world size
