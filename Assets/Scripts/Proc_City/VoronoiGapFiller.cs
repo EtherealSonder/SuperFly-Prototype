@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -22,77 +22,135 @@ public class VoronoiGapFiller : MonoBehaviour
     public GameObject wallPrefab;
     public float wallHeight = 5f;
     public Material wallMaterial;
-    public void FillGaps(bool[,] visited, int[,] voronoiMask, List<Vector2Int> seeds)
+    public void FillGaps(bool[,] visited, int[,] voronoiMask, List<Vector2Int> seeds, bool isRuntime = false)
     {
-#if UNITY_EDITOR
-        ClearExisting();
-
-        int width = visited.GetLength(0);
-        int height = visited.GetLength(1);
-
-        // Group Voronoi regions
-        Dictionary<int, List<Vector2Int>> regionMap = new();
-        for (int x = 0; x < width; x++)
+        if (cellSize <= 0f)
         {
-            for (int z = 0; z < height; z++)
-            {
-                int region = voronoiMask[x, z];
-                if (!regionMap.ContainsKey(region))
-                    regionMap[region] = new List<Vector2Int>();
-
-                regionMap[region].Add(new Vector2Int(x, z));
-            }
+            Debug.LogWarning("Cell size not set.");
+            return;
         }
+
+        // Clean up existing generated regions
+        if (isRuntime)
+            ClearExistingRuntime();
+        else
+            ClearExistingEditor();
 
         GameObject root = new GameObject("VoronoiFilled");
         root.transform.parent = this.transform;
 
-        int subRegionID = 0;
+        // Map: seedIndex → List of unvisited cells
+        Dictionary<int, List<Vector2Int>> regionMap = new Dictionary<int, List<Vector2Int>>();
 
-        foreach (var kvp in regionMap)
+        int width = visited.GetLength(0);
+        int height = visited.GetLength(1);
+
+        for (int x = 0; x < width; x++)
         {
-            var regionCells = kvp.Value;
-            var unvisited = regionCells.Where(c => !visited[c.x, c.y]).ToList();
-            if (unvisited.Count == 0) continue;
-
-            // Break into distinct regions using flood fill
-            List<List<Vector2Int>> subRegions = FloodFillRegions(unvisited);
-
-            foreach (var sub in subRegions)
+            for (int y = 0; y < height; y++)
             {
-                if (sub.Count == 0) continue;
+                if (!visited[x, y])
+                {
+                    int seedIndex = voronoiMask[x, y];
+                    if (!regionMap.ContainsKey(seedIndex))
+                        regionMap[seedIndex] = new List<Vector2Int>();
 
-                string type = ClassifyRegion(sub);
-                if (type == "Discard") continue;
-
-                GameObject regionGO = new GameObject($"Region_{type}_{subRegionID++}");
-                regionGO.transform.parent = root.transform;
-
-                var regionMesh = regionGO.AddComponent<RegionMeshGenerator>();
-                regionMesh.regionCells = sub;
-                regionMesh.regionType = type;
-                regionMesh.cellSize = cellSize;
-                regionMesh.lakeMaterial = lakeMaterial;
-                regionMesh.parkMaterial = parkMaterial;
-                regionMesh.wallPrefab = wallPrefab;
-                regionMesh.wallHeight = wallHeight;
-                regionMesh.wallMaterial = wallMaterial;
-
-#if UNITY_EDITOR
-                regionMesh.GenerateFilledMeshPerCell();
-#endif
+                    regionMap[seedIndex].Add(new Vector2Int(x, y));
+                }
             }
         }
-#endif
+
+        // Merge all unvisited cells into one list
+        List<Vector2Int> allUnvisited = new List<Vector2Int>();
+        foreach (var kvp in regionMap)
+        {
+            allUnvisited.AddRange(kvp.Value);
+        }
+
+        // Global flood-fill merge by region type
+        List<(string type, List<Vector2Int>)> groupedRegions = FloodFillClassifiedRegions(allUnvisited);
+
+        int subRegionID = 0;
+
+        foreach (var (type, sub) in groupedRegions)
+        {
+            if (type == "Discard" || sub.Count == 0) continue;
+
+            GameObject regionGO = new GameObject($"Region_{type}_{subRegionID++}");
+            regionGO.transform.parent = root.transform;
+
+            var regionMesh = regionGO.AddComponent<RegionMeshGenerator>();
+            regionMesh.regionCells = sub;
+            regionMesh.regionType = type;
+            regionMesh.cellSize = cellSize;
+            regionMesh.lakeMaterial = lakeMaterial;
+            regionMesh.parkMaterial = parkMaterial;
+            regionMesh.wallPrefab = wallPrefab;
+            regionMesh.wallHeight = wallHeight;
+            regionMesh.wallMaterial = wallMaterial;
+
+            regionMesh.GenerateFilledMeshPerCell();
+            regionMesh.SetShaderUniformsAtRuntime();
+        }
     }
 
-    void ClearExisting()
+
+    void ClearExistingEditor()
     {
 #if UNITY_EDITOR
-        Transform existing = transform.Find("VoronoiFilled");
+        var existing = transform.Find("VoronoiFilled");
         if (existing != null)
             DestroyImmediate(existing.gameObject);
 #endif
+    }
+
+    void ClearExistingRuntime()
+    {
+        var existing = transform.Find("VoronoiFilled");
+        if (existing != null)
+            Destroy(existing.gameObject);
+    }
+
+    List<(string type, List<Vector2Int>)> FloodFillClassifiedRegions(List<Vector2Int> cells)
+    {
+        var results = new List<(string, List<Vector2Int>)>();
+        var remaining = new HashSet<Vector2Int>(cells);
+
+        Vector2Int[] directions = new Vector2Int[]
+        {
+        Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right
+        };
+
+        while (remaining.Count > 0)
+        {
+            Vector2Int start = remaining.First();
+
+            var region = new List<Vector2Int>();
+            var queue = new Queue<Vector2Int>();
+            queue.Enqueue(start);
+            remaining.Remove(start);
+
+            while (queue.Count > 0)
+            {
+                Vector2Int current = queue.Dequeue();
+                region.Add(current);
+
+                foreach (var dir in directions)
+                {
+                    Vector2Int neighbor = current + dir;
+                    if (remaining.Contains(neighbor))
+                    {
+                        queue.Enqueue(neighbor);
+                        remaining.Remove(neighbor);
+                    }
+                }
+            }
+
+            string regionType = ClassifyRegion(region);
+            results.Add((regionType, region));
+        }
+
+        return results;
     }
 
     string ClassifyRegion(List<Vector2Int> cells)

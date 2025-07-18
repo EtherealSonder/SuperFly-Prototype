@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using System.Linq;
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -19,47 +21,118 @@ public class RegionMeshGenerator : MonoBehaviour
     public Material wallMaterial;
     public GameObject wallPrefab;
     public float wallHeight = 5f;
+    void Start()
+    {
+        SetShaderUniformsAtRuntime();
+    }
 
     [ContextMenu("Generate Filled Mesh (Per Cell)")]
-    public void GenerateFilledMeshPerCell()
+    private void EditorGenerateFilledMesh()
     {
 #if UNITY_EDITOR
+        GenerateFilledMeshPerCell();
+#endif
+    }
+    public void GenerateFilledMeshPerCell()
+    {
         if (regionCells.Count == 0)
         {
             Debug.LogWarning("No region cells to fill.");
             return;
         }
 
-        List<CombineInstance> combine = new List<CombineInstance>();
+        // Sort region into a local grid (normalize to start from 0,0)
+        int minX = regionCells.Min(c => c.x);
+        int minZ = regionCells.Min(c => c.y);
+        int maxX = regionCells.Max(c => c.x);
+        int maxZ = regionCells.Max(c => c.y);
 
+        int width = maxX - minX + 1;
+        int height = maxZ - minZ + 1;
+
+        bool[,] cellMap = new bool[width, height];
         foreach (var cell in regionCells)
         {
-            Mesh quad = CreateQuadMesh(cellSize);
-
-            Vector3 worldPos = new Vector3(cell.x * cellSize, 0, cell.y * cellSize);
-
-            CombineInstance ci = new CombineInstance();
-            ci.mesh = quad;
-            ci.transform = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one);
-            combine.Add(ci);
+            int x = cell.x - minX;
+            int z = cell.y - minZ;
+            cellMap[x, z] = true;
         }
 
-        Mesh combinedMesh = new Mesh();
-        combinedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // for large meshes
-        combinedMesh.CombineMeshes(combine.ToArray());
+        List<Vector3> vertices = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        List<Vector2> uvs = new List<Vector2>();
+        int vertOffset = 0;
 
-        GetComponent<MeshFilter>().sharedMesh = combinedMesh;
+        for (int z = 0; z < height; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!cellMap[x, z]) continue;
 
-        var rend = GetComponent<MeshRenderer>();
+                float worldX = (x + minX) * cellSize;
+                float worldZ = (z + minZ) * cellSize;
+
+                float half = cellSize / 2f;
+
+                // Quad vertices (in clockwise order)
+                vertices.Add(new Vector3(worldX - half, 0, worldZ - half));
+                vertices.Add(new Vector3(worldX + half, 0, worldZ - half));
+                vertices.Add(new Vector3(worldX + half, 0, worldZ + half));
+                vertices.Add(new Vector3(worldX - half, 0, worldZ + half));
+
+                uvs.Add(new Vector2(0, 0));
+                uvs.Add(new Vector2(1, 0));
+                uvs.Add(new Vector2(1, 1));
+                uvs.Add(new Vector2(0, 1));
+
+                // Two triangles per quad
+                triangles.Add(vertOffset + 0);
+                triangles.Add(vertOffset + 2);
+                triangles.Add(vertOffset + 1);
+
+                triangles.Add(vertOffset + 0);
+                triangles.Add(vertOffset + 3);
+                triangles.Add(vertOffset + 2);
+
+                vertOffset += 4;
+            }
+        }
+
+        Mesh mesh = new Mesh();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.SetUVs(0, uvs);
+        mesh.RecalculateNormals();
+
+        MeshFilter mf = GetComponent<MeshFilter>();
+        if (mf == null) mf = gameObject.AddComponent<MeshFilter>();
+        mf.sharedMesh = mesh;
+
+        MeshRenderer mr = GetComponent<MeshRenderer>();
+        if (mr == null) mr = gameObject.AddComponent<MeshRenderer>();
+
         if (regionType == "Lake" && lakeMaterial != null)
-            rend.sharedMaterial = lakeMaterial;
+            mr.sharedMaterial = lakeMaterial;
         else if (regionType == "Park" && parkMaterial != null)
-            rend.sharedMaterial = parkMaterial;
+            mr.sharedMaterial = parkMaterial;
 
         GeneratePerimeterWalls();
-#endif
     }
 
+    public void SetShaderUniformsAtRuntime()
+    {
+        if (regionType != "Lake" || lakeMaterial == null) return;
+
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        lakeMaterial.SetVector("_CamPosition", cam.transform.position);
+        lakeMaterial.SetFloat("_OrthographicCamSize", cam.orthographicSize);
+
+        // Optional: assign a render texture if you have one
+        // lakeMaterial.SetTexture("_RenderTexture", yourRenderTexture);
+    }
     private Mesh CreateQuadMesh(float size)
     {
         float half = size / 2f;
@@ -97,7 +170,6 @@ public class RegionMeshGenerator : MonoBehaviour
 
     public void GeneratePerimeterWalls()
     {
-#if UNITY_EDITOR
         if (wallPrefab == null) return;
 
         HashSet<Vector2Int> regionSet = new HashSet<Vector2Int>(regionCells);
@@ -121,10 +193,17 @@ public class RegionMeshGenerator : MonoBehaviour
                     Vector3 wallPos = basePos + offset;
 
                     Quaternion rot = Quaternion.LookRotation(new Vector3(dir.x, 0, dir.y));
-                    GameObject wall = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(wallPrefab);
+                    GameObject wall = Instantiate(wallPrefab);
                     wall.transform.position = wallPos;
                     wall.transform.rotation = rot;
-                    wall.transform.localScale = new Vector3(cellSize, wallHeight, 10f);
+                    float wallDepth = 30f;          // new thickness to bridge the 30-unit gap
+                    float offsetAmount = 10f;       // to center it between Voronoi and block edge
+
+                    Vector3 dirVector = new Vector3(dir.x, 0, dir.y).normalized;
+                    Vector3 adjustedPos = wallPos + dirVector * offsetAmount;
+
+                    wall.transform.position = adjustedPos;
+                    wall.transform.localScale = new Vector3(cellSize, wallHeight, wallDepth);
                     wall.transform.parent = wallRoot.transform;
 
                     // Apply material with tiling
@@ -147,7 +226,6 @@ public class RegionMeshGenerator : MonoBehaviour
                 }
             }
         }
-#endif
     }
 
 

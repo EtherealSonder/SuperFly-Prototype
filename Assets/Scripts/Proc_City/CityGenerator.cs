@@ -3,6 +3,10 @@ using UnityEngine;
 
 public class CityGenerator : MonoBehaviour
 {
+
+    [Header("Runtime")]
+    public bool enableRuntimeGen = false;
+
     [Header("City Settings")]
     public int cityWidth = 10;
     public int cityHeight = 10;
@@ -48,12 +52,21 @@ public class CityGenerator : MonoBehaviour
 
     [Header("Culling")]
     public int cullingChunkSize;
-    public void Generate()
+
+
+    void Start()
+    {
+        if (enableRuntimeGen)
+        {
+            Generate(true);
+        }
+    }
+    public void Generate(bool isRuntime = false)
     {
         // List to safely hold targets to destroy
         List<Transform> toDestroy = new List<Transform>();
 
-        string[] generatedGroups = { "Blocks", "Roads", "RoadIntersections" };
+        string[] generatedGroups = { "Chunks", "Roads", "RoadIntersections" ,"VoronoiFilled"};
 
         // Collect targets first
         foreach (Transform child in transform)
@@ -72,7 +85,8 @@ public class CityGenerator : MonoBehaviour
         foreach (Transform target in toDestroy)
         {
 #if UNITY_EDITOR
-            Object.DestroyImmediate(target.gameObject);
+            if (!isRuntime) DestroyImmediate(target.gameObject);
+            else Destroy(target.gameObject);
 #else
     Destroy(target.gameObject);
 #endif
@@ -135,14 +149,12 @@ public class CityGenerator : MonoBehaviour
     transform
 );
 
-#if UNITY_EDITOR
         var filler = GetComponent<VoronoiGapFiller>();
         if (filler != null)
         {
             filler.cellSize = blockSize + roadWidth;
-            filler.FillGaps(occupiedGrid, voronoiMask, voronoiSeeds);
+            filler.FillGaps(occupiedGrid, voronoiMask, voronoiSeeds, isRuntime);
         }
-#endif
 
 
     }
